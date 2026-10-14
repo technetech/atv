@@ -2,35 +2,38 @@
 (() => {
   'use strict';
   const TAU=Math.PI*2, clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), lerp=(a,b,t)=>a+(b-a)*t;
-  const tv=document.querySelector('#world'), field=document.querySelector('#signal-canvas');
-  const tc=tv.getContext('2d'), fc=field.getContext('2d');
+  const tv=document.querySelector('#world');
+  const tc=tv.getContext('2d');
   const hero=document.querySelector('.hero'), shell=document.querySelector('.television');
-  const scene=document.querySelector('.signal-scene');
-  const pointer={x:0,y:0,tx:0,ty:0}, fieldPointer={x:0,y:0,tx:0,ty:0};
-  let nowTime=0,fieldTime=0,last=0,tvVisible=true,fieldVisible=false,burst=-20,selectedMind=0;
-  let width=760,height=410,fw=680,fh=500,dirty=true;
+  const pointer={x:0,y:0,tx:0,ty:0};
+  let nowTime=0,last=0,tvVisible=true,selectedMind=0;
+  let width=760,height=410,dirty=true;
   let seed=294;function random(){seed=(seed*16807)%2147483647;return(seed-1)/2147483646}
   const dust=Array.from({length:120},()=>({x:random()*2-1,y:random()*2-1,z:random(),r:random()}));
-  const particles=Array.from({length:780},(_,i)=>({i,u:random(),v:random(),w:random(),x:0,y:0,z:0}));
+  const fields=[0,1,2].map(mode=>{const canvas=document.querySelector('#signal-canvas-'+mode);return{mode,canvas,context:canvas.getContext('2d'),pointer:{x:0,y:0,tx:0,ty:0},time:0,burst:-20,visible:false,width:680,height:500,particles:Array.from({length:780},(_,i)=>({i,u:random(),v:random(),w:random(),x:0,y:0,z:0}))}});
   function size(canvas,context,w,h){const d=Math.min(devicePixelRatio||1,1.75);canvas.width=Math.round(w*d);canvas.height=Math.round(h*d);context.setTransform(d,0,0,d,0,0)}
-  function resize(){const tr=tv.getBoundingClientRect(),fr=field.getBoundingClientRect();width=Math.max(1,tr.width);height=Math.max(1,tr.height);fw=Math.max(1,fr.width);fh=Math.max(1,fr.height);size(tv,tc,width,height);size(field,fc,fw,fh);dirty=true}
-  new ResizeObserver(resize).observe(tv);new ResizeObserver(resize).observe(field);resize();
-  const observer=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.target===tv)tvVisible=e.isIntersecting;else fieldVisible=e.isIntersecting});dirty=true},{rootMargin:'100px'});observer.observe(tv);observer.observe(field);
+  function resize(){const tr=tv.getBoundingClientRect();width=Math.max(1,tr.width);height=Math.max(1,tr.height);size(tv,tc,width,height);fields.forEach(f=>{const r=f.canvas.getBoundingClientRect();f.width=Math.max(1,r.width);f.height=Math.max(1,r.height);size(f.canvas,f.context,f.width,f.height)});dirty=true}
+  const resizer=new ResizeObserver(resize);resizer.observe(tv);fields.forEach(f=>resizer.observe(f.canvas));resize();
+  const observer=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.target===tv)tvVisible=e.isIntersecting;else{const f=fields.find(f=>f.canvas===e.target);if(f)f.visible=e.isIntersecting}});dirty=true},{rootMargin:'100px'});observer.observe(tv);fields.forEach(f=>observer.observe(f.canvas));
   function track(el,state,e){const r=el.getBoundingClientRect();state.tx=clamp((e.clientX-r.left)/r.width*2-1,-1,1);state.ty=clamp((e.clientY-r.top)/r.height*2-1,-1,1);dirty=true}
   hero.addEventListener('pointermove',e=>{if(!reduced)track(hero,pointer,e)});hero.addEventListener('pointerleave',()=>{pointer.tx=0;pointer.ty=0;dirty=true});
-  scene.addEventListener('pointermove',e=>{if(!reduced)track(scene,fieldPointer,e)});scene.addEventListener('pointerleave',()=>{fieldPointer.tx=fieldPointer.ty=0;dirty=true});
+  fields.forEach(f=>{f.canvas.addEventListener('pointermove',e=>{if(!reduced)track(f.canvas,f.pointer,e)});f.canvas.addEventListener('pointerleave',()=>{f.pointer.tx=f.pointer.ty=0;dirty=true})});
   window.addEventListener('tv-redraw',()=>dirty=true);
   document.querySelector('#frequency').addEventListener('input',()=>dirty=true);
-  document.querySelectorAll('.experience-tabs button,#next-experience,#scene-pause').forEach(b=>b.addEventListener('click',()=>dirty=true));
+  document.querySelectorAll('[data-pause]').forEach(b=>b.addEventListener('click',()=>dirty=true));
   document.querySelectorAll('[data-agent]').forEach(b=>b.addEventListener('click',()=>{selectedMind=Number(b.dataset.agent);dirty=true}));
-  document.querySelector('#send-signal').addEventListener('click',()=>{burst=fieldTime;dirty=true});
-  document.querySelector('#wave').addEventListener('click',()=>dirty=true);
+  document.querySelector('#send-signal').addEventListener('click',()=>{fields[2].burst=fields[2].time;dirty=true});
   function projection(x,y,z,turn,tilt,scale,cx,cy){const co=Math.cos(turn),si=Math.sin(turn),ct=Math.cos(tilt),st=Math.sin(tilt);const rx=x*co-z*si,rz=x*si+z*co,ry=y*ct-rz*st,d=rz*ct+y*st;const depth=650/(650+d);return{x:cx+rx*depth*scale,y:cy+ry*depth*scale,z:d,k:depth}}
   function path(c,pts,color,lineWidth=1,close=false){if(pts.length<2)return;c.beginPath();c.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)c.lineTo(pts[i].x,pts[i].y);if(close)c.closePath();c.strokeStyle=color;c.lineWidth=lineWidth;c.stroke()}
   function glow(c,x,y,r,color){const g=c.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,color);g.addColorStop(1,'transparent');c.fillStyle=g;c.fillRect(x-r,y-r,r*2,r*2)}
   function dot(c,p,r,color){c.fillStyle=color;c.beginPath();c.arc(p.x,p.y,Math.max(.1,r),0,TAU);c.fill()}
   function tvFrame(){
     tc.fillStyle='#030b09';tc.fillRect(0,0,width,height);
+    if(station%2===1){
+      tc.fillStyle='#080808';tc.fillRect(0,0,width,height);
+      for(let i=0;i<90;i++){const y=(i*17+nowTime*13)%height;tc.fillStyle='rgba(230,230,230,'+(.015+(i%7)*.004)+')';tc.fillRect(0,y,width,i%5===0?2:1)}
+      const sweep=(nowTime*35)%height;const g=tc.createLinearGradient(0,sweep-55,0,sweep+55);g.addColorStop(0,'transparent');g.addColorStop(.5,'#ffffff0a');g.addColorStop(1,'transparent');tc.fillStyle=g;tc.fillRect(0,sweep-55,width,110);return;
+    }
     const s=Math.min(width/660,height/340), cx=width*.51,cy=height*.57;
     const turn=nowTime*.085+pointer.x*.23,tilt=.38+pointer.y*.12;
     const P=(x,y,z)=>projection(x,y,z,turn,tilt,s,cx,cy);
@@ -66,8 +69,9 @@
     // Optical CRT sweep, deliberately low contrast.
     const sweep=(nowTime*19)%height;const gradient=tc.createLinearGradient(0,sweep-30,0,sweep+30);gradient.addColorStop(0,'transparent');gradient.addColorStop(.5,'#d9efb509');gradient.addColorStop(1,'transparent');tc.fillStyle=gradient;tc.fillRect(0,sweep-30,width,60);
   }
-  function fieldFrame(){
-    fc.fillStyle='#060c09';fc.fillRect(0,0,fw,fh);
+  function fieldFrame(state){
+    const {context:fc,width:fw,height:fh,pointer:fieldPointer,particles,mode:experienceMode,time:fieldTime,burst}=state;
+    fc.clearRect(0,0,fw,fh);
     const s=Math.min(fw/580,fh/460),cx=fw*.5,cy=fh*.44;
     const tuning=Number(document.querySelector('#frequency').value)/100;
     const energy=clamp(1-(fieldTime-burst)/3,0,1);
@@ -103,7 +107,7 @@
         y+=Math.sin(angle*3+fieldTime*.4)*22;
       }
       // Damped interpolation gives continuity when changing concepts.
-      const speed=reduced||scenePaused?1:.065;p.x=lerp(p.x,x,speed);p.y=lerp(p.y,y,speed);p.z=lerp(p.z,z,speed);
+      const speed=reduced||scenePaused[experienceMode]?1:.065;p.x=lerp(p.x,x,speed);p.y=lerp(p.y,y,speed);p.z=lerp(p.z,z,speed);
       const projected=P(p.x,p.y,p.z);positions.push({...projected,i:p.i,group:p.i%3});
     }
     // Sparse topology keeps the underlying geometry readable.
@@ -122,17 +126,16 @@
       fc.strokeStyle='#b6c89155';fc.lineWidth=1;fc.beginPath();fc.arc(you.x,you.y,18,0,TAU);fc.stroke();fc.font='8px monospace';fc.fillStyle='#d9e4bd';fc.textAlign='center';fc.fillText('YOU',you.x,you.y+3);
       if(energy>0){const r=(1-energy)*235;const pts=[];for(let i=0;i<=100;i++)pts.push(P(Math.cos(i/100*TAU)*r,0,Math.sin(i/100*TAU)*r));path(fc,pts,`rgba(246,170,96,${energy})`,2);glow(fc,cx,cy,100,`rgba(224,137,63,${energy*.13})`)}
     }
-    // Instrument ticks frame the installation without floating ornaments.
-    fc.strokeStyle='#71845a44';fc.lineWidth=1;for(let i=0;i<17;i++){let y=70+i*(fh-140)/16;fc.beginPath();fc.moveTo(9,y);fc.lineTo(i%4===0?17:12,y);fc.stroke();fc.beginPath();fc.moveTo(fw-9,y);fc.lineTo(fw-(i%4===0?17:12),y);fc.stroke()}
   }
   function animate(ms){
     const delta=Math.min((ms-last)/1000,.045);last=ms;
     if(document.hidden){requestAnimationFrame(animate);return}
-    pointer.x=lerp(pointer.x,pointer.tx,.04);pointer.y=lerp(pointer.y,pointer.ty,.04);fieldPointer.x=lerp(fieldPointer.x,fieldPointer.tx,.05);fieldPointer.y=lerp(fieldPointer.y,fieldPointer.ty,.05);
-    if(!paused)nowTime+=delta;if(!scenePaused&&!paused)fieldTime+=delta;
-    if(tvVisible&&(!paused||dirty))tvFrame();if(fieldVisible&&((!scenePaused&&!paused)||dirty))fieldFrame();
+    pointer.x=lerp(pointer.x,pointer.tx,.04);pointer.y=lerp(pointer.y,pointer.ty,.04);
+    if(!paused)nowTime+=delta;
+    if(tvVisible&&(!paused||dirty))tvFrame();
+    fields.forEach(f=>{f.pointer.x=lerp(f.pointer.x,f.pointer.tx,.05);f.pointer.y=lerp(f.pointer.y,f.pointer.ty,.05);if(f.visible&&!scenePaused[f.mode]&&!paused)f.time+=delta;if(f.visible&&((!scenePaused[f.mode]&&!paused)||dirty))fieldFrame(f)});
     if(!reduced&&!paused&&tvVisible){shell.style.transform=`rotate(${-3+pointer.x*.8}deg) rotateY(${-5+pointer.x*5}deg) rotateX(${-pointer.y*3}deg)`}
     dirty=false;requestAnimationFrame(animate);
   }
-  tvFrame();fieldFrame();requestAnimationFrame(animate);
+  tvFrame();fields.forEach(fieldFrame);requestAnimationFrame(animate);
 })();

@@ -6,7 +6,7 @@
   const tc=tv.getContext('2d');
   const hero=document.querySelector('.hero'), shell=document.querySelector('.television');
   const pointer={x:0,y:0,tx:0,ty:0};
-  let nowTime=0,last=0,tvVisible=true,selectedMind=0;
+  let nowTime=0,last=0,tvVisible=true;
   let width=760,height=410,dirty=true;
   let seed=294;function random(){seed=(seed*16807)%2147483647;return(seed-1)/2147483646}
   const dust=Array.from({length:120},()=>({x:random()*2-1,y:random()*2-1,z:random(),r:random()}));
@@ -19,10 +19,6 @@
   hero.addEventListener('pointermove',e=>{if(!reduced)track(hero,pointer,e)});hero.addEventListener('pointerleave',()=>{pointer.tx=0;pointer.ty=0;dirty=true});
   fields.forEach(f=>{f.canvas.addEventListener('pointermove',e=>{if(!reduced)track(f.canvas,f.pointer,e)});f.canvas.addEventListener('pointerleave',()=>{f.pointer.tx=f.pointer.ty=0;dirty=true})});
   window.addEventListener('tv-redraw',()=>dirty=true);
-  document.querySelector('#frequency').addEventListener('input',()=>dirty=true);
-  document.querySelectorAll('[data-pause]').forEach(b=>b.addEventListener('click',()=>dirty=true));
-  document.querySelectorAll('[data-agent]').forEach(b=>b.addEventListener('click',()=>{selectedMind=Number(b.dataset.agent);dirty=true}));
-  document.querySelector('#send-signal').addEventListener('click',()=>{fields[2].burst=fields[2].time;dirty=true});
   function projection(x,y,z,turn,tilt,scale,cx,cy){const co=Math.cos(turn),si=Math.sin(turn),ct=Math.cos(tilt),st=Math.sin(tilt);const rx=x*co-z*si,rz=x*si+z*co,ry=y*ct-rz*st,d=rz*ct+y*st;const depth=650/(650+d);return{x:cx+rx*depth*scale,y:cy+ry*depth*scale,z:d,k:depth}}
   function path(c,pts,color,lineWidth=1,close=false){if(pts.length<2)return;c.beginPath();c.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)c.lineTo(pts[i].x,pts[i].y);if(close)c.closePath();c.strokeStyle=color;c.lineWidth=lineWidth;c.stroke()}
   function glow(c,x,y,r,color){const g=c.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,color);g.addColorStop(1,'transparent');c.fillStyle=g;c.fillRect(x-r,y-r,r*2,r*2)}
@@ -73,8 +69,14 @@
     const {context:fc,width:fw,height:fh,pointer:fieldPointer,particles,mode:experienceMode,time:fieldTime,burst}=state;
     fc.clearRect(0,0,fw,fh);
     const s=Math.min(fw/580,fh/460),cx=fw*.5,cy=fh*.44;
-    const tuning=Number(document.querySelector('#frequency').value)/100;
-    const energy=clamp(1-(fieldTime-burst)/3,0,1);
+    const cycle=conceptCycle(experienceMode,reduced?[6,0,3][experienceMode]:fieldTime);
+    const tuning=cycle.tuning??1,selectedMind=cycle.mind??0;
+    const age=cycle.age??-1;
+    const energy=age>=0?clamp(1-age/3,0,1):0;
+    const row=document.querySelector('#concept-'+experienceMode);
+    row.querySelector('.cycle-track i').style.transform='scaleX('+cycle.progress+')';
+    const label=row.querySelector('.cycle-label');if(label.textContent!==cycle.label)label.textContent=cycle.label;
+    const message=document.querySelector('#scene-message-'+experienceMode);if(message.textContent!==cycle.message)message.textContent=cycle.message;
     const turn=fieldTime*.09+fieldPointer.x*.32,tilt=.22+fieldPointer.y*.17;
     const P=(x,y,z)=>projection(x,y,z,turn,tilt,s,cx,cy);
     glow(fc,cx,cy,Math.max(fw,fh)*.43,'#46723a26');
@@ -102,12 +104,12 @@
         // A user impulse spreads across a three-dimensional interference surface.
         const ring=Math.sqrt(p.u)*195,angle=p.v*TAU;
         const wave=Math.sin(ring*.055-fieldTime*2)*13;
-        const impulse=Math.sin(ring*.045-(fieldTime-burst)*5)*energy*65;
+        const impulse=Math.sin(ring*.045-age*5)*energy*65;
         x=Math.cos(angle)*ring;y=wave+impulse-10;z=Math.sin(angle)*ring;
         y+=Math.sin(angle*3+fieldTime*.4)*22;
       }
       // Damped interpolation gives continuity when changing concepts.
-      const speed=reduced||scenePaused[experienceMode]?1:.065;p.x=lerp(p.x,x,speed);p.y=lerp(p.y,y,speed);p.z=lerp(p.z,z,speed);
+      const speed=reduced?1:.065;p.x=lerp(p.x,x,speed);p.y=lerp(p.y,y,speed);p.z=lerp(p.z,z,speed);
       const projected=P(p.x,p.y,p.z);positions.push({...projected,i:p.i,group:p.i%3});
     }
     // Sparse topology keeps the underlying geometry readable.
@@ -122,7 +124,7 @@
     if(experienceMode===2){
       // A physical connection between the visitor and the signal field.
       const you={x:cx,y:fh*.79};const target=P(0,0,0);path(fc,[you,{x:cx-35*s,y:fh*.68},target],'#b7d18e66',1);
-      const t=(fieldTime-burst)/.8;if(t>=0&&t<1){dot(fc,{x:lerp(you.x,target.x,t),y:lerp(you.y,target.y,t)},4,'#ffb86c')}
+      const t=age/.8;if(t>=0&&t<1){dot(fc,{x:lerp(you.x,target.x,t),y:lerp(you.y,target.y,t)},4,'#ffb86c')}
       fc.strokeStyle='#b6c89155';fc.lineWidth=1;fc.beginPath();fc.arc(you.x,you.y,18,0,TAU);fc.stroke();fc.font='8px monospace';fc.fillStyle='#d9e4bd';fc.textAlign='center';fc.fillText('YOU',you.x,you.y+3);
       if(energy>0){const r=(1-energy)*235;const pts=[];for(let i=0;i<=100;i++)pts.push(P(Math.cos(i/100*TAU)*r,0,Math.sin(i/100*TAU)*r));path(fc,pts,`rgba(246,170,96,${energy})`,2);glow(fc,cx,cy,100,`rgba(224,137,63,${energy*.13})`)}
     }
@@ -133,7 +135,7 @@
     pointer.x=lerp(pointer.x,pointer.tx,.04);pointer.y=lerp(pointer.y,pointer.ty,.04);
     if(!paused)nowTime+=delta;
     if(tvVisible&&(!paused||dirty))tvFrame();
-    fields.forEach(f=>{f.pointer.x=lerp(f.pointer.x,f.pointer.tx,.05);f.pointer.y=lerp(f.pointer.y,f.pointer.ty,.05);if(f.visible&&!scenePaused[f.mode]&&!paused)f.time+=delta;if(f.visible&&((!scenePaused[f.mode]&&!paused)||dirty))fieldFrame(f)});
+    fields.forEach(f=>{f.pointer.x=lerp(f.pointer.x,f.pointer.tx,.05);f.pointer.y=lerp(f.pointer.y,f.pointer.ty,.05);if(f.visible&&!reduced)f.time+=delta;if(f.visible&&(!reduced||dirty))fieldFrame(f)});
     if(!reduced&&!paused&&tvVisible){shell.style.transform=`rotate(${-3+pointer.x*.8}deg) rotateY(${-5+pointer.x*5}deg) rotateX(${-pointer.y*3}deg)`}
     dirty=false;requestAnimationFrame(animate);
   }

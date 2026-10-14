@@ -22,4 +22,6 @@ The three channels are illustrative interactive demos, not live agent streams. C
 
 Run `node verify.cjs` for the renderer and interaction smoke checks. These exercise the JavaScript with a lightweight DOM/Canvas harness; they do not replace visual browser testing.
 
-The explanation is presented as three open sections while scrolling, each with an independent canvas and pause control. The television dial alternates three animated channels with three monochrome station messages. The TV lettering cycles through orange, white, black, red, green, blue, and yellow, respecting reduced-motion preferences.
+The explanation is presented as three open sections while scrolling, each with an independent canvas and automatic loop. The television dial alternates three animated channels with three monochrome station messages. The TV lettering cycles through orange, white, black, red, green, blue, and yellow, respecting reduced-motion preferences.
+
+Concept loops run on visible time: tuning 10 seconds, collaboration 12 seconds, participation 8 seconds. No manual controls are required. Hidden scenes suspend their clocks, and reduced-motion mode shows a static representative state.
